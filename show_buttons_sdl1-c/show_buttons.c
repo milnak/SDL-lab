@@ -206,6 +206,41 @@ int main(int argc, char *argv[])
     image_surface = IMG_Load(image_file);
     HANDLE_SDL_ERROR(image_surface == NULL, "IMG_Load");
 
+    SDL_ShowCursor(SDL_DISABLE);
+
+    screen_surface = SDL_SetVideoMode(display_width, display_height, 24 /*bpp*/, SDL_FULLSCREEN);
+    // HANDLE_SDL_ERROR(screen_surface == NULL, "SDL_SetVideoMode");
+    if (screen_surface == NULL)
+    {
+        printf("SDL_SetVideoMode %d x %d failed. Available video modes:\n", display_width, display_height);
+        // Memory owned by SDL. Don't free.
+        SDL_Rect** modes = SDL_ListModes(NULL, SDL_FULLSCREEN);
+        if (modes == (SDL_Rect**)0)
+        {
+            puts("  No modes available");
+            goto done;
+        }
+        else if (modes == (SDL_Rect**)-1)
+        {
+            puts("  All resolutions available");\
+            goto done;
+        }
+        else
+        {
+            // Try again with highest res. video mode.
+            int i;
+            for (i = 0; modes[i]; ++i)
+            {
+                display_width = modes[i]->w;
+                display_height = modes[i]->h;
+                printf("  %d x %d\n", modes[i]->w, modes[i]->h);
+            }
+
+            screen_surface = SDL_SetVideoMode(display_width, display_height, 24 /*bpp*/, SDL_FULLSCREEN);
+            HANDLE_SDL_ERROR(screen_surface == NULL, "SDL_SetVideoMode");
+        }
+    }
+
     if (rotation_angle == 0 || rotation_angle == 180)
     {
         ratio = min((float)display_width / image_surface->w, (float)display_height / image_surface->h);
@@ -215,11 +250,6 @@ int main(int argc, char *argv[])
         // Assume 90 or 270 degree rotation.
         ratio = min((float)display_width / image_surface->h, (float)display_height / image_surface->w);
     }
-
-    SDL_ShowCursor(SDL_DISABLE);
-
-    screen_surface = SDL_SetVideoMode(display_width, display_height, 24 /*bpp*/, SDL_FULLSCREEN);
-    HANDLE_SDL_ERROR(screen_surface == NULL, "SDL_SetVideoMode");
 
     printf("display: %d x %d; image: %d x %d; ratio: %.2f; angle: %d\n", display_width, display_height, image_surface->w, image_surface->h, ratio, rotation_angle);
 
