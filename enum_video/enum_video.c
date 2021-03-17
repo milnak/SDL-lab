@@ -13,6 +13,70 @@
         }                                              \
     } while (0)
 
+void dump_sdl_info()
+{
+    int ret;
+    
+    const int drivers = SDL_GetNumVideoDrivers();
+    for (int driverIndex = 0; driverIndex < drivers; ++driverIndex)
+    {
+        printf("Video driver %d:\n", driverIndex);
+
+        const char *driver_name = SDL_GetVideoDriver(driverIndex);
+        if (driver_name != NULL)
+        {
+            printf("  Name: %s\n", driver_name);
+        }
+
+        if (SDL_VideoInit(driver_name) == 0)
+        {
+            SDL_VideoQuit();
+        }
+        else
+        {
+            printf("  SDL_VideoInit: %s\n", SDL_GetError());
+        }
+    }
+
+    const int videodisplays = SDL_GetNumVideoDisplays();
+    printf("Num video displays: %d\n", videodisplays);
+    for (int displayIndex = 0; displayIndex < videodisplays; ++displayIndex)
+    {
+        printf("Video display %d:\n", displayIndex);
+        SDL_Rect rect;
+        float ddpi, hdpi, vdpi;
+
+        ret = SDL_GetNumDisplayModes(displayIndex);
+        printf("  Num display modes: %d\n", ret);
+        for (int modeIndex = 0; modeIndex < ret; ++modeIndex)
+        {
+            SDL_DisplayMode mode = {};
+            if (SDL_GetDisplayMode(displayIndex, modeIndex, &mode) == 0)
+            {
+                printf("  Mode(%d): format=%d; %d x %d; rate=%d\n", modeIndex, mode.format, mode.w, mode.h, mode.refresh_rate);
+            }
+        }
+
+        // int SDL_GetDesktopDisplayMode(int displayIndex, SDL_DisplayMode * mode);
+        // int SDL_GetCurrentDisplayMode(int displayIndex, SDL_DisplayMode * mode);
+
+        if (SDL_GetDisplayDPI(displayIndex, &ddpi, &hdpi, &vdpi) == 0)
+        {
+            printf("  DPI: d=%f h=%f v=%f\n", ddpi, hdpi, vdpi);
+        }
+
+        if (SDL_GetDisplayBounds(displayIndex, &rect) == 0)
+        {
+            printf("  Bounds: %d, %d (%d x %d)\n", rect.x, rect.y, rect.w, rect.h);
+        }
+
+        if (SDL_GetDisplayUsableBounds(displayIndex, &rect) == 0)
+        {
+            printf("  Usable Bounds: %d, %d (%d x %d)\n", rect.x, rect.y, rect.w, rect.h);
+        }
+    }
+}
+
 int main(int argc, char *argv[])
 {
     _Bool success = false;
@@ -21,46 +85,24 @@ int main(int argc, char *argv[])
     SDL_Renderer *renderer = NULL;
     SDL_RendererInfo renderer_info;
 
-    ret = SDL_Init(0);
-    HANDLE_SDL_ERROR(ret, "SDL_Init(0)");
-
-    const int drivers = SDL_GetNumVideoDrivers();
-    for (int i = 0; i < drivers; ++i)
-    {
-        const char *driver_name = SDL_GetVideoDriver(i);
-        if (driver_name != NULL)
-        {
-            if (SDL_VideoInit(driver_name) == 0)
-            {
-                SDL_VideoQuit();
-            }
-            else
-            {
-                printf("SDL_VideoInit %d: %s\n", i, SDL_GetError());
-            }
-        }
-        else
-        {
-            printf("Failed to get name of video driver %d\n", i);
-        }
-    }
-
     ret = SDL_Init(SDL_INIT_VIDEO);
     HANDLE_SDL_ERROR(ret, "SDL_Init(SDL_INIT_VIDEO)");
+
+    dump_sdl_info();
 
     window = SDL_CreateWindow("SDL2", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED_MASK,
                               640, 480, SDL_WINDOW_SHOWN);
     HANDLE_SDL_ERROR(window == NULL, "SDL_CreateWindow");
 
-    for (int i = 0; i < SDL_GetNumRenderDrivers(); ++i)
+    for (int index = 0; index < SDL_GetNumRenderDrivers(); ++index)
     {
-        if (SDL_GetRenderDriverInfo(i, &renderer_info) == 0)
+        if (SDL_GetRenderDriverInfo(index, &renderer_info) == 0)
         {
-            printf("Render driver %d: %s\n", i, renderer_info.name);
+            printf("Render driver %d: %s\n", index, renderer_info.name);
         }
         else
         {
-            printf("SDL_GetRenderDriverInfo %d: %s\n", i, SDL_GetError());
+            printf("SDL_GetRenderDriverInfo %d: %s\n", index, SDL_GetError());
         }
     }
 
