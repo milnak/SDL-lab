@@ -214,7 +214,7 @@ int main(int argc, char *argv[])
     ret = SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN);
     HANDLE_SDL_ERROR(ret, "SDL_SetWindowFullscreen");
 
-    image_surface = IMG_Load("loadingen.png");
+    image_surface = IMG_Load(image_file);
     if (image_surface == NULL)
     {
         printf("IMG_Load: %s\n", IMG_GetError());

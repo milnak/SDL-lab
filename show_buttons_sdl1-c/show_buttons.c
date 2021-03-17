@@ -5,8 +5,10 @@
 #include <time.h>
 #include <sys/time.h>
 
+// https://www.libsdl.org/release/SDL-1.2.15/docs/html
 #include <SDL/SDL.h>
 #include <SDL/SDL_gfxPrimitives.h>
+// https://www.libsdl.org/projects/SDL_image/docs/SDL_image_frame.html
 #include <SDL/SDL_image.h>
 #include <SDL/SDL_rotozoom.h>
 
@@ -71,9 +73,14 @@ float hue_to_RGB(float p, float q, float t)
 }
 
 // https://stackoverflow.com/questions/36721830/convert-hsl-to-rgb-and-hex
-void HSL_to_RGB(float h, float s, float l, int *red, int *green, int *blue)
+// h: degrees (0..360); s: percentage; l: percentage
+void HSL_to_RGB(int hue, int saturation, int lightness, int *red, int *green, int *blue)
 {
     float r, g, b;
+
+    float h = (float)hue / 360;
+    float s = (float)saturation / 100;
+    float l = (float)lightness / 100;
 
     if (s == 0)
     {
@@ -170,13 +177,7 @@ int draw_rect(SDL_Surface *dst,
               Sint16 x, Sint16 y, Sint16 w, Sint16 h,
               Uint8 r, Uint8 g, Uint8 b)
 {
-    int ret = 0;
-
-    ret = rectangleRGBA(dst, x, y, w - x, h - y, r, g, b, 255 /*a*/);
-    HANDLE_SDL_ERROR(ret, "rectangleRGBA");
-
-done:
-    return ret;
+    return rectangleRGBA(dst, x, y, w - x - 1, h - y - 1, r, g, b, 255 /*a*/);
 }
 
 int main(int argc, char *argv[])
@@ -185,7 +186,7 @@ int main(int argc, char *argv[])
     SDL_Surface *screen_surface = NULL;
     SDL_Surface *image_surface = NULL;
     SDL_Surface *rotozoom_surface = NULL;
-    SDL_Surface *rgb_surface = NULL;
+    float ratio = 0.0;
 
     success = parse_args(argc, argv);
     if (!success)
@@ -198,25 +199,57 @@ int main(int argc, char *argv[])
     ret = SDL_Init(SDL_INIT_VIDEO);
     HANDLE_SDL_ERROR(ret, "SDL_Init");
 
-    ret = IMG_Init(IMG_INIT_PNG);
-    HANDLE_SDL_ERROR((ret & IMG_INIT_PNG) == 0, "IMG_Init");
+    const IMG_InitFlags init_flags = IMG_INIT_JPG | IMG_INIT_PNG;
+    ret = IMG_Init(init_flags);
+    HANDLE_SDL_ERROR((ret & init_flags) == 0, "IMG_Init");
 
     image_surface = IMG_Load(image_file);
     HANDLE_SDL_ERROR(image_surface == NULL, "IMG_Load");
 
-    SDL_ShowCursor(0);
+    if (rotation_angle == 0 || rotation_angle == 180)
+    {
+        ratio = min((float)display_width / image_surface->w, (float)display_height / image_surface->h);
+    }
+    else
+    {
+        // Assume 90 or 270 degree rotation.
+        ratio = min((float)display_width / image_surface->h, (float)display_height / image_surface->w);
+    }
 
-    screen_surface = SDL_SetVideoMode(display_width, display_height, 24 /*bpp*/, 0 /*SDL_FULLSCREEN*/);
+    SDL_ShowCursor(SDL_DISABLE);
+
+    screen_surface = SDL_SetVideoMode(display_width, display_height, 24 /*bpp*/, SDL_FULLSCREEN);
     HANDLE_SDL_ERROR(screen_surface == NULL, "SDL_SetVideoMode");
 
-    rotozoom_surface = rotozoomSurfaceXY(image_surface, rotation_angle,
-                                         display_width / image_surface->w /*zoomx*/, display_height / image_surface->h /*zoomy*/,
-                                         SMOOTHING_ON);
+    printf("display: %d x %d; image: %d x %d; ratio: %.2f; angle: %d\n", display_width, display_height, image_surface->w, image_surface->h, ratio, rotation_angle);
+
+    // Draw bounding box.
+    draw_rect(screen_surface,
+              0, 0, display_width, display_height,
+              0x20, 0x20, 0x20);
+
+    rotozoom_surface = rotozoomSurfaceXY(image_surface, rotation_angle, ratio, ratio, SMOOTHING_ON);
     HANDLE_SDL_ERROR(rotozoom_surface == NULL, "rotozoom_surfaceSurfaceXY");
 
-    rgb_surface = SDL_CreateRGBSurface(SDL_SWSURFACE, display_width, display_height, 32,
-                                       0 /*Rmask*/, 0 /*Gmask*/, 0 /*Bmask*/, 0 /*Amask*/);
-    HANDLE_SDL_ERROR(rgb_surface == NULL, "SDL_CreateRGBSurface");
+    // Specify dest rect - SDL_RenderCopyEx will resize to fit.
+    SDL_Rect dest;
+    dest.w = image_surface->w * ratio;
+    dest.h = image_surface->h * ratio;
+
+    // Center image
+    if (rotation_angle == 0 || rotation_angle == 180)
+    {
+        dest.x = (display_width - dest.w) / 2;
+        dest.y = (display_height - dest.h) / 2;
+    }
+    else
+    {
+        // Assume 90 or 270 degree rotation.
+        dest.x = (display_width - dest.h) / 2;
+        dest.y = (display_height - dest.w) / 2;
+    }
+
+    SDL_BlitSurface(rotozoom_surface, NULL /*srcrect*/, screen_surface, &dest);
 
     const long int start_time = time_now();
     _Bool running = true;
@@ -246,24 +279,24 @@ int main(int argc, char *argv[])
             break;
         }
 
-        // Blit rotozoom_surface to rgb_surface
-        SDL_BlitSurface(rotozoom_surface, NULL, rgb_surface, NULL);
+        // Draw timer.
+        {
+            const float ratio = min((float)elapsed_time / ms_to_display, 1.0);
 
-        // Blit rgb_surface to screen_surface
-        SDL_BlitSurface(rgb_surface, NULL, screen_surface, NULL);
+            int r, g, b;
+            HSL_to_RGB((ratio * 360) / 1.5, 100, 50, &r, &g, &b);
+
+            hlineRGBA(screen_surface,
+                      0, display_width * ratio, display_height - 1, r, g, b, 255 /*a*/);
+        }
 
         // UpdateRect
-        SDL_Flip(screen_surface); // SDL_GetVideoSurface()
+        SDL_Flip(screen_surface);
 
         SDL_Delay(1000 / 60);
     }
 
 done:
-    if (rgb_surface != NULL)
-    {
-        SDL_FreeSurface(rgb_surface);
-    }
-
     if (rotozoom_surface != NULL)
     {
         SDL_FreeSurface(rotozoom_surface);

@@ -14,7 +14,7 @@ clean:
 .PHONY: all clean
 
 sdl_cflags := $(shell pkg-config --cflags sdl)
-sdl_libs := $(shell pkg-config --libs sdl2 SDL_image SDL_gfx)
+sdl_libs := $(shell pkg-config --libs sdl SDL_image SDL_gfx)
 override CFLAGS += $(sdl_cflags)
 override LIBS += $(sdl_libs)
 
