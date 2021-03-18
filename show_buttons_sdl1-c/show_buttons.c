@@ -74,14 +74,10 @@ float hue_to_RGB(float p, float q, float t)
 }
 
 // https://stackoverflow.com/questions/36721830/convert-hsl-to-rgb-and-hex
-// h: degrees (0..360); s: percentage; l: percentage
-void HSL_to_RGB(int hue, int saturation, int lightness, int *red, int *green, int *blue)
+// h: 0..1 (0..360 degrees); s: 0..1 (0..100%); l: 0..1 (0..100%)
+void HSL_to_RGB(float h, float s, float l, int *red, int *green, int *blue)
 {
     float r, g, b;
-
-    float h = (float)hue / 360;
-    float s = (float)saturation / 100;
-    float l = (float)lightness / 100;
 
     if (s == 0)
     {
@@ -294,7 +290,7 @@ int main(int argc, char *argv[])
             const float ratio = min((float)elapsed_time / ms_to_display, 1.0);
 
             int r, g, b;
-            HSL_to_RGB((ratio * 360) / 1.5, 100, 50, &r, &g, &b);
+            HSL_to_RGB(ratio / 1.5f, 1.0f, 0.50f, &r, &g, &b);
 
             const int x1 = (display_width - safe_width) / 2;
             hlineRGBA(screen_surface, x1, x1 + (safe_width * ratio),

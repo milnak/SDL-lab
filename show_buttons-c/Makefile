@@ -6,7 +6,7 @@
 
 EXEC = show_buttons
 
-CFLAGS = -O3
+CFLAGS = -O3 -Wall -Werror
 LDFLAGS = 
 
 all: $(EXEC)

@@ -3,12 +3,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h> // geteuid
 #include <sys/time.h>
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_image.h>
 #include <SDL2/SDL_timer.h>
-#include <SDL2/SDL2_rotozoom.h>
 
 char *image_file = NULL;
 int display_width = 0;
@@ -71,6 +71,7 @@ float hue_to_RGB(float p, float q, float t)
 }
 
 // https://stackoverflow.com/questions/36721830/convert-hsl-to-rgb-and-hex
+// h: 0..1 (0..360 degrees); s: 0..1 (0..100%); l: 0..1 (0..100%)
 void HSL_to_RGB(float h, float s, float l, int *red, int *green, int *blue)
 {
     float r, g, b;
@@ -100,7 +101,7 @@ void usage()
     puts("Usage: image_file width height ms_to_display rotation");
 }
 
-void del()
+void free_args()
 {
     if (image_file != NULL)
     {
@@ -114,7 +115,7 @@ void del()
     rotation_angle = 0;
 }
 
-int init(int argc, char *argv[])
+int parse_args(int argc, char *argv[])
 {
     _Bool success = false;
 
@@ -160,13 +161,14 @@ done:
     if (!success)
     {
         usage();
-        del();
+        free_args();
     }
 
     return success;
 }
 
-int draw_rect(SDL_Renderer *renderer, int x, int y, int w, int h, Uint8 r, Uint8 g, Uint8 b)
+int draw_rect(SDL_Renderer *renderer,
+              int x, int y, int w, int h, Uint8 r, Uint8 g, Uint8 b)
 {
     int ret = 0;
 
@@ -197,7 +199,13 @@ int main(int argc, char *argv[])
     SDL_Surface *image_surface = NULL;
     SDL_Texture *image_texture = NULL;
 
-    success = init(argc, argv);
+    if (geteuid() != 0)
+    {
+        puts("Must be run as root.");
+        goto done;
+    }
+
+    success = parse_args(argc, argv);
     if (!success)
     {
         goto done;
@@ -205,6 +213,17 @@ int main(int argc, char *argv[])
 
     ret = SDL_Init(SDL_INIT_VIDEO);
     HANDLE_SDL_ERROR(ret, "SDL_Init");
+
+    const IMG_InitFlags init_flags = IMG_INIT_JPG | IMG_INIT_PNG;
+    ret = IMG_Init(init_flags);
+    HANDLE_SDL_ERROR((ret & init_flags) == 0, "IMG_Init");
+
+    image_surface = IMG_Load(image_file);
+    if (image_surface == NULL)
+    {
+        printf("IMG_Load: %s\n", IMG_GetError());
+        goto done;
+    }
 
     SDL_ShowCursor(SDL_DISABLE);
 
@@ -214,24 +233,23 @@ int main(int argc, char *argv[])
     ret = SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN);
     HANDLE_SDL_ERROR(ret, "SDL_SetWindowFullscreen");
 
-    image_surface = IMG_Load(image_file);
-    if (image_surface == NULL)
-    {
-        printf("IMG_Load: %s\n", IMG_GetError());
-        goto done;
-    }
+    // Draw bounding box.
+    const float safearea_percent = 0.90f;
+    const int safe_width = display_width * safearea_percent;
+    const int safe_height = display_height * safearea_percent;
 
     if (rotation_angle == 0 || rotation_angle == 180)
     {
-        ratio = min((float)display_width / image_surface->w, (float)display_height / image_surface->h);
+        ratio = min((float)safe_width / image_surface->w, (float)safe_height / image_surface->h);
     }
     else
     {
         // Assume 90 or 270 degree rotation.
-        ratio = min((float)display_width / image_surface->h, (float)display_height / image_surface->w);
+        ratio = min((float)safe_width / image_surface->h, (float)safe_height / image_surface->w);
     }
 
     printf("display: %d x %d; image: %d x %d; ratio: %.2f; angle: %d\n", display_width, display_height, image_surface->w, image_surface->h, ratio, rotation_angle);
+    printf("safe: %d x %d\n", safe_width, safe_height);
 
     renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
     HANDLE_SDL_ERROR(renderer == NULL, "SDL_CreateRenderer");
@@ -295,16 +313,17 @@ int main(int argc, char *argv[])
             const float ratio = min((float)elapsed_time / ms_to_display, 1.0);
 
             int r, g, b;
-            HSL_to_RGB(ratio, 1.0f, 0.5f, &r, &g, &b);
+            HSL_to_RGB(ratio / 1.5f, 1.0f, 0.5f, &r, &g, &b);
 
-            draw_rect(renderer,
-                      0, display_height - 2,
-                      (int)(display_width * ratio), 2,
-                      r, g, b);
-            
+            const int x1 = (display_width - safe_width) / 2;
+            const int y1 = display_height - ((display_height - safe_height) / 2) - 1;
+            if (draw_rect(renderer, x1, y1, safe_width, 1, r, g, b) != 0)
+            {
+                goto done;
+            }
+
             SDL_RenderPresent(renderer);
         }
-
 
         SDL_Delay(1000 / 60);
     }
@@ -327,14 +346,12 @@ done:
         SDL_DestroyTexture(image_texture);
     }
 
-    if (window != NULL)
+    if (SDL_WasInit(0))
     {
-        SDL_DestroyWindow(window);
+        SDL_Quit();
     }
 
-    SDL_Quit();
-
-    del();
+    free_args();
 
     // Return 0 from main on success.
     return success ? 0 : 1;
