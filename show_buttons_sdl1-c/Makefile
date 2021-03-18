@@ -16,7 +16,7 @@ clean:
 sdl_cflags := $(shell pkg-config --cflags sdl)
 sdl_libs := $(shell pkg-config --libs sdl SDL_image SDL_gfx)
 override CFLAGS += $(sdl_cflags)
-override LIBS += $(sdl_libs)
+override LIBS += $(sdl_libs) -Wl,-rpath=/usr/local/lib
 
 $(EXEC): $(EXEC).o
 	$(CC) $(LDFLAGS) -o $@ $^ $(LIBS)

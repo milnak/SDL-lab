@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h> // geteuid
 #include <sys/time.h>
 
 // https://www.libsdl.org/release/SDL-1.2.15/docs/html
@@ -188,6 +189,12 @@ int main(int argc, char *argv[])
     SDL_Surface *rotozoom_surface = NULL;
     float ratio = 0.0;
 
+    if (geteuid() != 0)
+    {
+        puts("Must be run as root.");
+        goto done;
+    }
+
     success = parse_args(argc, argv);
     if (!success)
     {
@@ -209,54 +216,27 @@ int main(int argc, char *argv[])
     SDL_ShowCursor(SDL_DISABLE);
 
     screen_surface = SDL_SetVideoMode(display_width, display_height, 24 /*bpp*/, SDL_FULLSCREEN);
-    // HANDLE_SDL_ERROR(screen_surface == NULL, "SDL_SetVideoMode");
-    if (screen_surface == NULL)
-    {
-        printf("SDL_SetVideoMode %d x %d failed. Available video modes:\n", display_width, display_height);
-        // Memory owned by SDL. Don't free.
-        SDL_Rect** modes = SDL_ListModes(NULL, SDL_FULLSCREEN);
-        if (modes == (SDL_Rect**)0)
-        {
-            puts("  No modes available");
-            goto done;
-        }
-        else if (modes == (SDL_Rect**)-1)
-        {
-            puts("  All resolutions available");\
-            goto done;
-        }
-        else
-        {
-            // Try again with highest res. video mode.
-            int i;
-            for (i = 0; modes[i]; ++i)
-            {
-                display_width = modes[i]->w;
-                display_height = modes[i]->h;
-                printf("  %d x %d\n", modes[i]->w, modes[i]->h);
-            }
+    HANDLE_SDL_ERROR(screen_surface == NULL, "SDL_SetVideoMode");
 
-            screen_surface = SDL_SetVideoMode(display_width, display_height, 24 /*bpp*/, SDL_FULLSCREEN);
-            HANDLE_SDL_ERROR(screen_surface == NULL, "SDL_SetVideoMode");
-        }
-    }
+    // Draw bounding box.
+    const float safearea_percent = 0.90f;
+    const int safe_width = display_width * safearea_percent;
+    const int safe_height = display_height * safearea_percent;
 
     if (rotation_angle == 0 || rotation_angle == 180)
     {
-        ratio = min((float)display_width / image_surface->w, (float)display_height / image_surface->h);
+        ratio = min((float)safe_width / image_surface->w, (float)safe_height / image_surface->h);
     }
     else
     {
         // Assume 90 or 270 degree rotation.
-        ratio = min((float)display_width / image_surface->h, (float)display_height / image_surface->w);
+        ratio = min((float)safe_width / image_surface->h, (float)safe_height / image_surface->w);
     }
 
     printf("display: %d x %d; image: %d x %d; ratio: %.2f; angle: %d\n", display_width, display_height, image_surface->w, image_surface->h, ratio, rotation_angle);
-
-    // Draw bounding box.
-    draw_rect(screen_surface,
-              0, 0, display_width, display_height,
-              0x20, 0x20, 0x20);
+    printf("safe: %d x %d\n", safe_width, safe_height);
+    
+    draw_rect(screen_surface, 0, 0, display_width, display_height, 0x40, 0x40, 0x40);
 
     rotozoom_surface = rotozoomSurfaceXY(image_surface, rotation_angle, ratio, ratio, SMOOTHING_ON);
     HANDLE_SDL_ERROR(rotozoom_surface == NULL, "rotozoom_surfaceSurfaceXY");
@@ -316,8 +296,9 @@ int main(int argc, char *argv[])
             int r, g, b;
             HSL_to_RGB((ratio * 360) / 1.5, 100, 50, &r, &g, &b);
 
-            hlineRGBA(screen_surface,
-                      0, display_width * ratio, display_height - 1, r, g, b, 255 /*a*/);
+            const int x1 = (display_width - safe_width) / 2;
+            hlineRGBA(screen_surface, x1, x1 + (safe_width * ratio),
+                      display_height - ((display_height - safe_height) / 2) - 1, r, g, b, 255 /*a*/);
         }
 
         // UpdateRect
