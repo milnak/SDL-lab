@@ -15,8 +15,6 @@
 
 void dump_sdl_info()
 {
-    int ret;
-    
     const int drivers = SDL_GetNumVideoDrivers();
     for (int driverIndex = 0; driverIndex < drivers; ++driverIndex)
     {
@@ -26,15 +24,15 @@ void dump_sdl_info()
         if (driver_name != NULL)
         {
             printf("  Name: %s\n", driver_name);
-        }
 
-        if (SDL_VideoInit(driver_name) == 0)
-        {
-            SDL_VideoQuit();
-        }
-        else
-        {
-            printf("  SDL_VideoInit: %s\n", SDL_GetError());
+            if (SDL_VideoInit(driver_name) == 0)
+            {
+                SDL_VideoQuit();
+            }
+            else
+            {
+                printf("  SDL_VideoInit: %s\n", SDL_GetError());
+            }
         }
     }
 
@@ -43,10 +41,8 @@ void dump_sdl_info()
     for (int displayIndex = 0; displayIndex < videodisplays; ++displayIndex)
     {
         printf("Video display %d:\n", displayIndex);
-        SDL_Rect rect;
-        float ddpi, hdpi, vdpi;
 
-        ret = SDL_GetNumDisplayModes(displayIndex);
+        int ret = SDL_GetNumDisplayModes(displayIndex);
         printf("  Num display modes: %d\n", ret);
         for (int modeIndex = 0; modeIndex < ret; ++modeIndex)
         {
@@ -60,11 +56,13 @@ void dump_sdl_info()
         // int SDL_GetDesktopDisplayMode(int displayIndex, SDL_DisplayMode * mode);
         // int SDL_GetCurrentDisplayMode(int displayIndex, SDL_DisplayMode * mode);
 
+        float ddpi, hdpi, vdpi;
         if (SDL_GetDisplayDPI(displayIndex, &ddpi, &hdpi, &vdpi) == 0)
         {
             printf("  DPI: d=%f h=%f v=%f\n", ddpi, hdpi, vdpi);
         }
 
+        SDL_Rect rect;
         if (SDL_GetDisplayBounds(displayIndex, &rect) == 0)
         {
             printf("  Bounds: %d, %d (%d x %d)\n", rect.x, rect.y, rect.w, rect.h);
@@ -83,18 +81,22 @@ int main(int argc, char *argv[])
     int ret = 0;
     SDL_Window *window = NULL;
     SDL_Renderer *renderer = NULL;
-    SDL_RendererInfo renderer_info;
+
+    // NOTE: Calling SDL_VideoInit() after SDL_Init(INIT_VIDEO)
+    // will corrupt the stack!
+    ret = SDL_Init(0);
+    HANDLE_SDL_ERROR(ret, "SDL_Init(0)");
+
+    dump_sdl_info();
 
     ret = SDL_Init(SDL_INIT_VIDEO);
     HANDLE_SDL_ERROR(ret, "SDL_Init(SDL_INIT_VIDEO)");
 
-    dump_sdl_info();
+    SDL_RendererInfo renderer_info;
 
-    window = SDL_CreateWindow("SDL2", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED_MASK,
-                              640, 480, SDL_WINDOW_SHOWN);
-    HANDLE_SDL_ERROR(window == NULL, "SDL_CreateWindow");
-
-    for (int index = 0; index < SDL_GetNumRenderDrivers(); ++index)
+    const int renderDrivers = SDL_GetNumRenderDrivers();
+    printf("Render drivers: %d\n", renderDrivers);
+    for (int index = 0; index < renderDrivers; ++index)
     {
         if (SDL_GetRenderDriverInfo(index, &renderer_info) == 0)
         {
@@ -106,15 +108,18 @@ int main(int argc, char *argv[])
         }
     }
 
+    window = SDL_CreateWindow("SDL2", 0, 0, 320, 240, 
+                              SDL_WINDOW_SHOWN | SDL_WINDOW_FULLSCREEN);
+    HANDLE_SDL_ERROR(window == NULL, "SDL_CreateWindow");
+
     renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
     HANDLE_SDL_ERROR(renderer == NULL, "SDL_CreateRenderer");
 
     ret = SDL_GetRendererInfo(renderer, &renderer_info);
     HANDLE_SDL_ERROR(ret, "SDL_GetRendererInfo");
-
     printf("active renderer: %s\n", renderer_info.name);
 
-    Uint8 current_color = 0;
+    Uint8 color = 0;
 
     _Bool running = true;
 
@@ -130,14 +135,15 @@ int main(int argc, char *argv[])
                 break;
             }
 
-            if ((event.type == SDL_KEYDOWN) && (event.key.keysym.sym == SDLK_ESCAPE))
+            if (event.type == SDL_KEYDOWN)
             {
                 running = false;
                 break;
             }
         }
 
-        ret = SDL_SetRenderDrawColor(renderer, current_color, current_color, current_color, SDL_ALPHA_OPAQUE);
+        ret = SDL_SetRenderDrawColor(renderer, color, (color + 128) % 255, 255 - color, 
+            SDL_ALPHA_OPAQUE);
         HANDLE_SDL_ERROR(ret, "SDL_GetRendererInfo");
 
         ret = SDL_RenderClear(renderer);
@@ -147,7 +153,7 @@ int main(int argc, char *argv[])
 
         SDL_Delay(1000 / 60);
 
-        ++current_color;
+        ++color;
     }
 
 done:
