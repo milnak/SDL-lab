@@ -124,23 +124,6 @@ void refresh(SDL_Renderer *renderer)
     frame_count++;
 }
 
-void print_init_flags(int flags)
-{
-#define PFLAG(a)              \
-    if (flags & MIX_INIT_##a) \
-    printf(#a " ")
-
-    PFLAG(FLAC);
-    PFLAG(MOD);
-    PFLAG(MP3);
-    PFLAG(OGG);
-    if (!flags)
-    {
-        printf("None");
-    }
-    printf("\n");
-}
-
 int handle_keydown(SDL_Keysym keysym)
 {
     int done = 0;
@@ -308,6 +291,7 @@ int main(int argc, char **argv)
     elapsed_ms = SDL_GetTicks() - elapsed_ms;
 
     Mix_FreeMusic(music);
+    
     Mix_CloseAudio();
     SDL_Quit();
 
