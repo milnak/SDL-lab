@@ -6,6 +6,17 @@
 #include <unistd.h> // geteuid
 #include <sys/time.h>
 
+#ifndef DONT_OPEN_DEV_FB0
+// open(), errno
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <errno.h>
+
+// ioctl
+#include <linux/fb.h>
+#include <sys/ioctl.h>
+#endif
+
 // https://www.libsdl.org/release/SDL-1.2.15/docs/html
 #include <SDL/SDL.h>
 #include <SDL/SDL_gfxPrimitives.h>
@@ -179,7 +190,11 @@ int draw_rect(SDL_Surface *dst,
 
 int main(int argc, char *argv[])
 {
+    int ret = 0;
     _Bool success = false;
+#ifndef DONT_OPEN_DEV_FB0
+    int dev_fb0_fh = -1;
+#endif
     SDL_Surface *screen_surface = NULL;
     SDL_Surface *image_surface = NULL;
     SDL_Surface *rotozoom_surface = NULL;
@@ -194,10 +209,32 @@ int main(int argc, char *argv[])
     success = parse_args(argc, argv);
     if (!success)
     {
+        puts("parse_args failed");
         goto done;
     }
 
-    int ret = 0;
+#ifndef DONT_OPEN_DEV_FB0
+    // Can also use:
+    // export SDL_VIDEODRIVER=fbcon
+    // export SDL_FBDEV=/dev/fb0
+    dev_fb0_fh = open("/dev/fb0", O_RDONLY);
+    if (dev_fb0_fh < 0)
+    {
+        printf("Unable to open /dev/fb0, error %d\n", errno);
+        goto done;
+    }
+
+    struct fb_var_screeninfo vinfo;
+    if (ioctl(dev_fb0_fh, FBIOGET_VSCREENINFO, &vinfo) != 0)
+    {
+        puts("FBIOGET_VSCREENINFO failed");
+        goto done;
+    }
+
+    display_width = vinfo.xres;
+    display_height = vinfo.yres;
+    printf("Using frame buffer %d x %d\n", display_width, display_height);
+#endif
 
     ret = SDL_Init(SDL_INIT_VIDEO);
     HANDLE_SDL_ERROR(ret, "SDL_Init");
@@ -214,10 +251,15 @@ int main(int argc, char *argv[])
     screen_surface = SDL_SetVideoMode(display_width, display_height, 24 /*bpp*/, SDL_FULLSCREEN);
     HANDLE_SDL_ERROR(screen_surface == NULL, "SDL_SetVideoMode");
 
-    // Draw bounding box.
+#ifndef DONT_USE_SAFEAREA
     const float safearea_percent = 0.90f;
     const int safe_width = display_width * safearea_percent;
     const int safe_height = display_height * safearea_percent;
+    printf("safe: %d x %d\n", safe_width, safe_height);
+#else
+    const int safe_width = display_width;
+    const int safe_height = display_height;
+#endif
 
     if (rotation_angle == 0 || rotation_angle == 180)
     {
@@ -230,9 +272,10 @@ int main(int argc, char *argv[])
     }
 
     printf("display: %d x %d; image: %d x %d; ratio: %.2f; angle: %d\n", display_width, display_height, image_surface->w, image_surface->h, ratio, rotation_angle);
-    printf("safe: %d x %d\n", safe_width, safe_height);
-    
+
+#ifdef DRAW_BOUNDING_BOX
     draw_rect(screen_surface, 0, 0, display_width, display_height, 0x40, 0x40, 0x40);
+#endif
 
     rotozoom_surface = rotozoomSurfaceXY(image_surface, rotation_angle, ratio, ratio, SMOOTHING_ON);
     HANDLE_SDL_ERROR(rotozoom_surface == NULL, "rotozoom_surfaceSurfaceXY");
@@ -318,6 +361,13 @@ done:
     {
         SDL_Quit();
     }
+
+#ifndef DONT_OPEN_DEV_FB0
+    if (dev_fb0_fh >= 0)
+    {
+        close(dev_fb0_fh);
+    }
+#endif
 
     free_args();
 
