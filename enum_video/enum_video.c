@@ -115,6 +115,8 @@ int main(int argc, char *argv[])
     renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
     HANDLE_SDL_ERROR(renderer == NULL, "SDL_CreateRenderer");
 
+    SDL_ShowCursor(SDL_DISABLE);
+    
     ret = SDL_GetRendererInfo(renderer, &renderer_info);
     HANDLE_SDL_ERROR(ret, "SDL_GetRendererInfo");
     printf("active renderer: %s\n", renderer_info.name);
